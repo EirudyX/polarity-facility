@@ -7,14 +7,40 @@ using UnityEngine.Rendering;
 
 namespace PolarityFacility
 {
-    public static class FacilityBuilder
+    public static partial class FacilityBuilder
     {
         private const string ScenePath = "Assets/Scenes/PolarityFacility.unity";
+        private const string MassScenePath = "Assets/Scenes/MassTransfer.unity";
+        private const string MenuScenePath = "Assets/Scenes/LevelMenu.unity";
         private static Material deck, dark, steel, pale, stripe, red, blue, idle, ready, black, glow;
         private static Transform geometry, detail, background;
 
         [MenuItem("Tools/Polarity Facility/Rebuild Demo Scene")]
-        public static void CreateScene()
+        public static void CreateScene() => CreateScene(false);
+
+        [MenuItem("Tools/Polarity Facility/Rebuild Mass Transfer Scene")]
+        public static void CreateMassTransferScene() => CreateScene(true);
+
+        [MenuItem("Tools/Polarity Facility/Rebuild Level Menu")]
+        public static void CreateLevelMenu()
+        {
+            var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+            var root = new GameObject("Level Menu", typeof(Camera), typeof(AudioListener), typeof(LevelNavigation));
+            var camera = root.GetComponent<Camera>();
+            camera.clearFlags = CameraClearFlags.SolidColor;
+            camera.backgroundColor = new Color32(22, 35, 53, 255);
+            camera.cullingMask = 0;
+            SavePlayableScene(scene, MenuScenePath);
+
+            var scenes = EditorBuildSettings.scenes;
+            int menuIndex = Array.FindIndex(scenes, entry => entry.path == MenuScenePath);
+            if (menuIndex < 0) throw new InvalidOperationException("Level menu was not saved");
+            Array.Copy(scenes, 0, scenes, 1, menuIndex);
+            scenes[0] = new EditorBuildSettingsScene(MenuScenePath, true);
+            EditorBuildSettings.scenes = scenes;
+        }
+
+        private static void CreateScene(bool massChallenge)
         {
             EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
             Directory.CreateDirectory("Assets/Scenes");
@@ -26,9 +52,12 @@ namespace PolarityFacility
             background = new GameObject("03  Lower facility").transform;
 
             Platform("Intake", -12.5f, -3.35f, -2.85f, 2.85f, 0, 4.5f);
-            Platform("Transfer", -1.3f, 6.05f, -2.65f, 3.35f, -.62f, 5.7f);
-            Platform("Magnetic catwalk", 6.058f, 8.992f, 1.12f, 4.05f, -.62f, 2.8f, 5.97f, 9.05f);
-            Platform("Pair terminal", 9.0f, 15.65f, .08f, 5.95f, -.62f, 5.0f);
+            Platform("Transfer", -1.3f, massChallenge ? 4.85f : 6.05f, -2.65f, 3.35f, -.62f, 5.7f);
+            if (!massChallenge)
+            {
+                Platform("Magnetic catwalk", 6.058f, 8.992f, 1.12f, 4.05f, -.62f, 2.8f, 5.97f, 9.05f);
+                Platform("Pair terminal", 9.0f, 15.65f, .08f, 5.95f, -.62f, 5.0f);
+            }
             Transform bridge = Box("Lift bridge", new Vector3(-2.32f,-.85f,0), new Vector3(2.02f,.46f,2.38f),
                 steel, geometry, true);
             // Keep the overlapping collision footprint, but leave a seam between the visible decks.
@@ -46,37 +75,46 @@ namespace PolarityFacility
             Renderer switchLamp = Socket(farSwitch.position, .78f, idle, "Receiver plate");
             Box("Receiver cue",new Vector3(-.62f,-.603f,0),new Vector3(1.08f,.025f,.06f),pale,detail,false);
 
-            Transform rail = Mark("Fixed south pole",new Vector3(6.81f,-.62f,3.83f));
-            Box("Magnetic column", rail.position + Vector3.up * .95f, new Vector3(1.16f,1.9f,.47f),dark,detail,true);
-            Box("Fixed pole face",rail.position+new Vector3(0,1.02f,-.249f),new Vector3(.9f,1.26f,.06f),steel,detail,false);
-            for (int i = 0; i < 4; i++)
-                Box("Pole fins",rail.position+new Vector3(0,.62f + i * .23f,-.289f),new Vector3(.74f,.083f,.09f),
-                    ready,detail,false);
             Frame(new Vector3(-10.99f,0,2.43f), 2.65f,2.8f, false);
             Frame(new Vector3(3.25f,-.62f,2.93f), 2.7f,3.15f, false);
-            Frame(new Vector3(12.1f,-.62f,3.05f), 4.84f,3.5f,true);
-            Transform gate = Box("Shutter",new Vector3(12.1f,.82f,3.05f),new Vector3(.29f,2.92f,4.78f),
-                steel,geometry,true);
-            for(int i=0;i<7;i++)
-                LocalBox(gate,"Shutter slat",new Vector3(-.55f,-.43f+i*.138f,0),new Vector3(.24f,.035f,.96f),dark);
-            Renderer gateLamp = Box("Terminal status",new Vector3(11.72f,2.57f,3.05f),new Vector3(.12f,.2f,1.45f),idle,detail,false).GetComponent<Renderer>();
-            Transform socketLeft = Mark("Low socket",new Vector3(10.43f,-.62f,1.83f));
-            Transform socketRight = Mark("High socket",new Vector3(10.43f,-.62f,4.27f));
-            Renderer l = Socket(socketLeft.position,.66f,idle,"Low terminal plate");
-            Renderer r = Socket(socketRight.position,.66f,idle,"High terminal plate");
-            Transform exit = Mark("Pair exit",new Vector3(13.89f,-.62f,3.05f));
-            Socket(exit.position,1.48f,ready,"Exit annulus");
-            Box("Exit backstop",new Vector3(15.51f,.45f,3.05f),new Vector3(.27f,2.11f,4.8f),dark,geometry,true);
-            for(int i=0;i<5;i++)
-                Box("Exit backstop ribs",new Vector3(15.33f,.38f,.97f+i*1.04f),new Vector3(.19f,1.72f,.23f),
-                    i%2==0 ? ready:steel,detail,false);
-            Decorate();
+            Transform rail = null, gate = null, socketLeft = null, socketRight = null;
+            Renderer gateLamp = null, l = null, r = null;
+            if (!massChallenge)
+            {
+                rail = Mark("Fixed south pole",new Vector3(6.81f,-.62f,3.83f));
+                Box("Magnetic column", rail.position + Vector3.up * .95f, new Vector3(1.16f,1.9f,.47f),dark,detail,true);
+                Box("Fixed pole face",rail.position+new Vector3(0,1.02f,-.249f),new Vector3(.9f,1.26f,.06f),steel,detail,false);
+                for (int i = 0; i < 4; i++)
+                    Box("Pole fins",rail.position+new Vector3(0,.62f + i * .23f,-.289f),new Vector3(.74f,.083f,.09f),
+                        ready,detail,false);
+                Frame(new Vector3(12.1f,-.62f,3.05f), 4.84f,3.5f,true);
+                gate = Box("Shutter",new Vector3(12.1f,.82f,3.05f),new Vector3(.29f,2.92f,4.78f),
+                    steel,geometry,true);
+                for(int i=0;i<7;i++)
+                    LocalBox(gate,"Shutter slat",new Vector3(-.55f,-.43f+i*.138f,0),new Vector3(.24f,.035f,.96f),dark);
+                gateLamp = Box("Terminal status",new Vector3(11.72f,2.57f,3.05f),new Vector3(.12f,.2f,1.45f),idle,detail,false).GetComponent<Renderer>();
+                socketLeft = Mark("Low socket",new Vector3(10.43f,-.62f,1.83f));
+                socketRight = Mark("High socket",new Vector3(10.43f,-.62f,4.27f));
+                l = Socket(socketLeft.position,.66f,idle,"Low terminal plate");
+                r = Socket(socketRight.position,.66f,idle,"High terminal plate");
+            }
 
-            var bodyA = Ball("Body A",new Vector3(-10.55f,.50f,-.79f),red,out var shellA,out var haloA,out var trailA);
-            var bodyB = Ball("Body B",new Vector3(-8.93f,.50f,.77f),blue,out var shellB,out var haloB,out var trailB);
+            Transform exit = Mark("Pair exit", massChallenge ? new Vector3(3.18f,-.62f,.15f) : new Vector3(13.89f,-.62f,3.05f));
+            Socket(exit.position,1.48f,ready,"Exit annulus");
+            float backstop = exit.position.x + 1.62f;
+            Box("Exit backstop",new Vector3(backstop,.45f,exit.position.z),new Vector3(.27f,2.11f,4.8f),dark,geometry,true);
+            for(int i=0;i<5;i++)
+                Box("Exit backstop ribs",new Vector3(backstop-.18f,.38f,exit.position.z-2.08f+i*1.04f),new Vector3(.19f,1.72f,.23f),
+                    i%2==0 ? ready:steel,detail,false);
+            Decorate(massChallenge);
+
+            Vector3 spawnA = massChallenge ? new Vector3(-6.7f,.50f,-.64f) : new Vector3(-10.55f,.50f,-.79f);
+            Vector3 spawnB = massChallenge ? new Vector3(-10.15f,.50f,.88f) : new Vector3(-8.93f,.50f,.77f);
+            var bodyA = Ball("Body A",spawnA,red,out var shellA,out var haloA,out var trailA);
+            var bodyB = Ball("Body B",spawnB,blue,out var shellB,out var haloB,out var trailB);
             var field = Line("Pair field",49,.038f);
             field.positionCount = 37;
-            Camera camera = Lighting();
+            Camera camera = Lighting(massChallenge);
             var root = new GameObject("04  Facility simulation");
             var level = root.AddComponent<FacilityLevel>();
             var so = new SerializedObject(level);
@@ -88,10 +126,57 @@ namespace PolarityFacility
             Put(so,"bridge",bridge); Put(so,"gate",gate); Put(so,"switchLight",switchLamp);
             Put(so,"socketLightLeft",l); Put(so,"socketLightRight",r); Put(so,"gateLight",gateLamp);
             Put(so,"standbyLight",idle); Put(so,"readyLight",ready); Put(so,"view",camera);
+            if (massChallenge) Put(so,"massTransfer", AddMassStation(root, bodyA, bodyB));
             so.ApplyModifiedPropertiesWithoutUndo();
-            EditorSceneManager.SaveScene(root.scene, ScenePath);
-            EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene(ScenePath,true) };
+            SavePlayableScene(root.scene, massChallenge ? MassScenePath : ScenePath);
+        }
+
+        private static void SavePlayableScene(UnityEngine.SceneManagement.Scene scene, string path)
+        {
+            EditorSceneManager.SaveScene(scene, path);
+            var scenes = EditorBuildSettings.scenes;
+            if (!Array.Exists(scenes, entry => entry.path == path))
+            {
+                Array.Resize(ref scenes, scenes.Length + 1);
+                scenes[scenes.Length - 1] = new EditorBuildSettingsScene(path, true);
+                EditorBuildSettings.scenes = scenes;
+            }
             AssetDatabase.SaveAssets();
+        }
+
+        private static MassTransferStation AddMassStation(GameObject root, Rigidbody bodyA, Rigidbody bodyB)
+        {
+            Transform near = Mark("Ballast station near pad", new Vector3(-8.7f, 0, -1.55f));
+            Transform far = Mark("Ballast station far pad", new Vector3(-8.7f, 0, 1.55f));
+            Vector3 center = (near.position + far.position) * .5f;
+            Box("Ballast station channel", center + Vector3.up * .019f, new Vector3(.44f,.038f,3.08f), dark, detail, false);
+            Renderer conduit = Box("Ballast station link", center + Vector3.up * .04f, new Vector3(.11f,.018f,2.9f),
+                idle, detail, false).GetComponent<Renderer>();
+            var station = root.AddComponent<MassTransferStation>();
+            var so = new SerializedObject(station);
+            Put(so,"nearPad",near); Put(so,"farPad",far);
+            Put(so,"nearLamp",Socket(near.position,.71f,idle,"Near ballast pad"));
+            Put(so,"farLamp",Socket(far.position,.71f,idle,"Far ballast pad"));
+            Put(so,"conduitLamp",conduit); Put(so,"idle",idle); Put(so,"live",ready);
+            BallastBand(bodyA.transform, 0, 1.07f);
+            var ballastA = new GameObject("Transferred ballast");
+            ballastA.transform.SetParent(bodyA.transform, false);
+            BallastBand(ballastA.transform, -.19f, 1.00f);
+            BallastBand(ballastA.transform, .19f, 1.00f);
+            GameObject ballastB = BallastBand(bodyB.transform, 0, 1.07f);
+            ballastA.SetActive(false);
+            Put(so,"ballastA",ballastA); Put(so,"ballastB",ballastB);
+            so.ApplyModifiedPropertiesWithoutUndo();
+            return station;
+        }
+
+        private static GameObject BallastBand(Transform parent, float height, float diameter)
+        {
+            Transform band = Primitive(PrimitiveType.Cylinder, "Ballast band", Vector3.zero,
+                new Vector3(diameter, .065f, diameter), stripe, detail, false);
+            band.SetParent(parent, false);
+            band.localPosition = Vector3.up * height;
+            return band.gameObject;
         }
 
         private static void Put(SerializedObject so,string key,UnityEngine.Object item) =>
@@ -212,7 +297,7 @@ namespace PolarityFacility
             return detail.Find(name+" emitting rim").GetComponent<Renderer>();
         }
 
-        private static void Decorate()
+        private static void Decorate(bool massChallenge)
         {
             for (int i=0;i<17;i++)
             {
@@ -228,6 +313,7 @@ namespace PolarityFacility
             for(int i=0;i<9;i++)
                 Box("Understructure crossbeam",new Vector3(i*3.2f-12,-8.2f,-2.25f),new Vector3(.22f,.33f,12),steel,background,false);
             Box("Void foundation",new Vector3(0,-19.6f,3),new Vector3(82,.5f,65),steel,background,false);
+            if (massChallenge) return;
             Box("Transfer boundary",new Vector3(4.75f,-.29f,-2.46f),new Vector3(2.15f,.66f,.28f),dark,detail,false);
             Box("Boundary accent",new Vector3(4.75f,.058f,-2.46f),new Vector3(2.19f,.04f,.32f),stripe,detail,false);
             Box("Turn guard",new Vector3(7.47f,-.26f,1.25f),new Vector3(2.62f,.72f,.18f),dark,detail,true);
@@ -247,15 +333,15 @@ namespace PolarityFacility
             body.mass=1;
             body.interpolation=RigidbodyInterpolation.Interpolate;
             body.collisionDetectionMode=CollisionDetectionMode.ContinuousDynamic;
-            body.angularDrag=.65f;
+            body.angularDamping=.65f;
             body.maxAngularVelocity=35;
-            var friction = new PhysicMaterial("Rolling shell")
+            var friction = new PhysicsMaterial("Rolling shell")
             {
                 dynamicFriction=.16f, staticFriction=.22f, bounciness=.04f,
-                frictionCombine=PhysicMaterialCombine.Minimum
+                frictionCombine=PhysicsMaterialCombine.Minimum
             };
             string frictionPath="Assets/Art/Materials/Rolling shell.physicMaterial";
-            var previous=AssetDatabase.LoadAssetAtPath<PhysicMaterial>(frictionPath);
+            var previous=AssetDatabase.LoadAssetAtPath<PhysicsMaterial>(frictionPath);
             if(previous==null) AssetDatabase.CreateAsset(friction,frictionPath); else friction=previous;
             ball.GetComponent<Collider>().sharedMaterial=friction;
             var seam=Line(name+" meridian",49,.016f);
@@ -294,18 +380,18 @@ namespace PolarityFacility
             return line;
         }
 
-        private static Camera Lighting()
+        private static Camera Lighting(bool massChallenge)
         {
             var view=new GameObject("Facility camera").AddComponent<Camera>();
             view.tag="MainCamera";
             view.orthographic=true;
-            view.orthographicSize=9.25f;
+            view.orthographicSize=massChallenge ? 6.05f : 9.25f;
             view.clearFlags=CameraClearFlags.SolidColor;
             view.backgroundColor=new Color32(28,42,64,255);
             view.nearClipPlane=.1f;
             view.farClipPlane=95;
-            view.transform.position=new Vector3(2.7f,15.9f,-21.8f);
-            view.transform.LookAt(new Vector3(1.5f,-.85f,1.3f));
+            view.transform.position=massChallenge ? new Vector3(-2.8f,15.9f,-21.8f) : new Vector3(2.7f,15.9f,-21.8f);
+            view.transform.LookAt(massChallenge ? new Vector3(-3.8f,-.85f,.4f) : new Vector3(1.5f,-.85f,1.3f));
             RenderSettings.ambientMode=AmbientMode.Trilight;
             RenderSettings.ambientSkyColor=new Color(.56f,.66f,.79f);
             RenderSettings.ambientEquatorColor=new Color(.33f,.43f,.55f);
@@ -377,6 +463,27 @@ namespace PolarityFacility
                 BuildTarget.StandaloneWindows64,BuildOptions.None);
             if(report.summary.result!=UnityEditor.Build.Reporting.BuildResult.Succeeded)
                 throw new InvalidOperationException("Windows build failed " + report.summary.result);
+        }
+
+        [MenuItem("Tools/Polarity Facility/Build Mass Transfer for Windows")]
+        public static void BuildMassTransferWindows() => BuildChallengeWindows(MassScenePath, "Windows-MassTransfer");
+
+        [MenuItem("Tools/Polarity Facility/Build All Levels for Windows")]
+        public static void BuildCampaignWindows() =>
+            BuildWindowsPlayer(new[] { MenuScenePath, ScenePath, MassScenePath, RailScenePath }, "Windows-Campaign");
+
+        private static void BuildChallengeWindows(string scenePath, string folder) =>
+            BuildWindowsPlayer(new[] { scenePath }, folder);
+
+        private static void BuildWindowsPlayer(string[] scenes, string folder)
+        {
+            FacilityLab.Verify();
+            string dir = Path.GetFullPath(Path.Combine(Application.dataPath, "../Build", folder));
+            Directory.CreateDirectory(dir);
+            var report = BuildPipeline.BuildPlayer(scenes, Path.Combine(dir, "PolarityFacility.exe"),
+                BuildTarget.StandaloneWindows64, BuildOptions.None);
+            if (report.summary.result != UnityEditor.Build.Reporting.BuildResult.Succeeded)
+                throw new InvalidOperationException($"Windows build failed for {folder}: {report.summary.result}");
         }
     }
 }
