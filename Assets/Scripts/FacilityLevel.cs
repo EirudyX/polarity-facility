@@ -59,11 +59,11 @@ namespace PolarityFacility
                 ResetLevel(true);
                 proof = true;
                 string prefix = args[option + 1];
-                if (LevelNavigation.CampaignProof)
+                if (LevelNavigation.DemoTourProof)
                 {
                     string scene = SceneManager.GetActiveScene().name;
                     prefix += "-" + scene;
-                    Debug.Log("CAMPAIGN ENTER " + scene);
+                    Debug.Log("DEMO ENTER " + scene);
                 }
                 if (railRelay != null) StartCoroutine(ProveRailRelay(prefix));
                 else StartCoroutine(massTransfer != null ? ProveMassTransfer(prefix) : Prove(prefix));
@@ -122,7 +122,7 @@ namespace PolarityFacility
             if (proof) return;
             if (Input.GetKeyDown(KeyCode.Escape) && LevelNavigation.MenuAvailable)
             {
-                LevelNavigation.ReturnToMenu();
+                LevelNavigation.ReturnToDemoList();
                 return;
             }
             if (!started)
@@ -134,7 +134,7 @@ namespace PolarityFacility
             if (complete)
             {
                 if (!reset && Input.GetKeyDown(KeyCode.Return) && LevelNavigation.MenuAvailable)
-                    LevelNavigation.Advance();
+                    LevelNavigation.ReturnToDemoList();
                 return;
             }
             if (Input.GetKeyDown(KeyCode.Tab)) primary = 1 - primary;
@@ -415,7 +415,7 @@ namespace PolarityFacility
                 Caption(y + 71, 23, "N + N   ↔       S + S   ↔       N + S   →←", Gold);
                 Caption(y + 117, 17, "SAME POLES REPEL   /   OPPOSITE POLES ATTRACT", Color.white);
                 Caption(y + 167, 16, "WASD + Q       /       ARROWS + RIGHT SHIFT       /       TAB", Color.white);
-                Caption(y + 214, 16, LevelNavigation.MenuAvailable ? "ENTER START   /   ESC LEVEL SELECT" : "ENTER", Gold);
+                Caption(y + 214, 16, LevelNavigation.MenuAvailable ? "ENTER START   /   ESC DEMO LIST" : "ENTER", Gold);
             }
             else if (complete)
             {
@@ -430,21 +430,13 @@ namespace PolarityFacility
             float y = Screen.height * .28f;
             float width = Mathf.Min(368, Screen.width * .85f);
             float x = (Screen.width - width) / 2;
-            Caption(y, 40, "LEVEL COMPLETE", Color.white);
-            string next = LevelNavigation.NextLabel;
-            if (next != null && GUI.Button(new Rect(x, y + 72, width, 42), "Next: " + next + "  [Enter]"))
+            Caption(y, 40, "DEMO COMPLETE", Color.white);
+            if (GUI.Button(new Rect(x, y + 72, width, 42), "Demo List  [Enter / Esc]"))
             {
-                LevelNavigation.Advance();
+                LevelNavigation.ReturnToDemoList();
                 return;
             }
-            float menuY = y + (next != null ? 123 : 72);
-            string keys = next != null ? "Esc" : "Enter / Esc";
-            if (GUI.Button(new Rect(x, menuY, width, 42), "Level Select  [" + keys + "]"))
-            {
-                LevelNavigation.ReturnToMenu();
-                return;
-            }
-            if (GUI.Button(new Rect(x, menuY + 51, width, 42), "Retry  [R]"))
+            if (GUI.Button(new Rect(x, y + 123, width, 42), "Retry  [R]"))
                 reset = true;
         }
 
@@ -524,7 +516,7 @@ namespace PolarityFacility
                 () => complete || proofFalls != falls, 10);
             if (!complete) { Fail("rail relay dual exit"); yield break; }
             yield return Capture(prefix + "-exit.png");
-            if (AdvanceCampaign()) yield break;
+            if (ReturnToDemoListForProof()) yield break;
 
             reset = true;
             yield return new WaitForFixedUpdate();
@@ -613,7 +605,7 @@ namespace PolarityFacility
                 () => complete, 12);
             if (!complete) { Fail("both balls reach the exit"); yield break; }
             yield return Capture(prefix + "-exit.png");
-            if (AdvanceCampaign()) yield break;
+            if (ReturnToDemoListForProof()) yield break;
 
             reset = true;
             yield return new WaitForFixedUpdate();
@@ -682,14 +674,14 @@ namespace PolarityFacility
                 yield return CaptureCameraSweep(prefix);
             Debug.Log("PASS facility traversal: anchor, latch, launch, landing, bridge, dual flip, two sockets, exit");
             yield return new WaitForSecondsRealtime(.4f);
-            if (!AdvanceCampaign()) Application.Quit(0);
+            if (!ReturnToDemoListForProof()) Application.Quit(0);
         }
 
-        private bool AdvanceCampaign()
+        private bool ReturnToDemoListForProof()
         {
-            if (!LevelNavigation.CampaignProof) return false;
-            Debug.Log("PASS campaign completion " + SceneManager.GetActiveScene().name);
-            LevelNavigation.Advance();
+            if (!LevelNavigation.DemoTourProof) return false;
+            Debug.Log("PASS demo completion " + SceneManager.GetActiveScene().name);
+            LevelNavigation.ReturnToDemoList();
             return true;
         }
 

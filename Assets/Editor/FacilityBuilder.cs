@@ -468,9 +468,9 @@ namespace PolarityFacility
         [MenuItem("Tools/Polarity Facility/Build Mass Transfer for Windows")]
         public static void BuildMassTransferWindows() => BuildChallengeWindows(MassScenePath, "Windows-MassTransfer");
 
-        [MenuItem("Tools/Polarity Facility/Build All Levels for Windows")]
-        public static void BuildCampaignWindows() =>
-            BuildWindowsPlayer(new[] { MenuScenePath, ScenePath, MassScenePath, RailScenePath }, "Windows-Campaign");
+        [MenuItem("Tools/Polarity Facility/Build Demo Menu for Windows")]
+        public static void BuildDemoMenuWindows() =>
+            BuildWindowsPlayer(new[] { MenuScenePath, ScenePath, MassScenePath, RailScenePath }, "Windows-DemoMenu");
 
         private static void BuildChallengeWindows(string scenePath, string folder) =>
             BuildWindowsPlayer(new[] { scenePath }, folder);
