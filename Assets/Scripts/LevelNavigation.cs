@@ -31,7 +31,12 @@ namespace PolarityFacility
             new Demo("MassTransfer", "配重转移", "Mass transfer",
                 "转移两球间的配重，比较弹射距离。", "Transfer weight between spheres to change their launch range."),
             new Demo("RailRelay", "可翻转磁轨", "Reversible rail",
-                "踩住开关翻转磁轨，让另一颗球改变路线。", "Reverse a magnetic rail to reroute the other sphere.")
+                "踩住开关翻转磁轨，让另一颗球改变路线。", "Reverse a magnetic rail to reroute the other sphere."),
+            new Demo("PumpSurge", "泵涌", "Magnetic pumping",
+                "控制 B 球跨过斜坡后的断口，启动接收台。", "Get B up the ramp and across the gap to the receiver."),
+            new Demo("MagneticClimb", "磁吸攀壁", "Magnetic climb",
+                "沿墙与顶棚移动，切极落到对岸，为另一颗球开路。",
+                "Climb the wall and ceiling, then flip to land and open the other sphere's route.")
         };
 
         private static readonly Color Background = new Color32(12, 22, 35, 255);
@@ -69,14 +74,20 @@ namespace PolarityFacility
         {
             showingDemos = reopenDemos;
             reopenDemos = false;
+            menuFont = FindChineseFont();
+        }
+
+        internal static Font FindChineseFont()
+        {
             string[] installedFonts = Font.GetOSInstalledFontNames();
             foreach (string family in new[] { "Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans CJK SC", "PingFang SC" })
             {
                 if (!Array.Exists(installedFonts,
                         installed => string.Equals(installed, family, StringComparison.OrdinalIgnoreCase))) continue;
-                menuFont = Font.CreateDynamicFontFromOSFont(family, 22);
-                if (menuFont != null) break;
+                Font font = Font.CreateDynamicFontFromOSFont(family, 22);
+                if (font != null) return font;
             }
+            return null;
         }
 
         private void OnDestroy()
@@ -109,9 +120,9 @@ namespace PolarityFacility
                 }
                 DemoTourProof = true;
                 Debug.Log("PASS launch: formal level select");
-                yield return CaptureMenu(args[proof + 1] + "-level-select.png");
+                yield return CaptureFrame(args[proof + 1] + "-level-select.png");
                 ShowDemoList();
-                yield return CaptureMenu(args[proof + 1] + "-demo-list.png");
+                yield return CaptureFrame(args[proof + 1] + "-demo-list.png");
             }
             else if (!showingDemos)
             {
@@ -138,7 +149,7 @@ namespace PolarityFacility
             }
         }
 
-        private static IEnumerator CaptureMenu(string path)
+        internal static IEnumerator CaptureFrame(string path)
         {
             yield return new WaitForEndOfFrame();
             var image = new Texture2D(Screen.width, Screen.height, TextureFormat.RGB24, false);
@@ -246,16 +257,17 @@ namespace PolarityFacility
                 return;
             }
 
-            const float rowHeight = 91, viewHeight = 330;
+            const float rowHeight = 91, cardHeight = 77, viewHeight = 356;
             var viewport = new Rect(72, 234, 976, viewHeight);
-            float rowWidth = Demos.Length * rowHeight > viewHeight ? 950 : viewport.width;
+            float contentHeight = (Demos.Length - 1) * rowHeight + cardHeight;
+            float rowWidth = contentHeight > viewHeight ? 950 : viewport.width;
             demoScroll = GUI.BeginScrollView(viewport, demoScroll,
-                new Rect(0, 0, rowWidth, Demos.Length * rowHeight));
+                new Rect(0, 0, rowWidth, contentHeight));
             int selected = -1;
             for (int i = 0; i < Demos.Length; i++)
             {
                 Demo demo = Demos[i];
-                var row = new Rect(0, i * rowHeight, rowWidth, 77);
+                var row = new Rect(0, i * rowHeight, rowWidth, cardHeight);
                 bool available = Application.CanStreamedLevelBeLoaded(demo.Scene);
                 Card(row, available && row.Contains(Event.current.mousePosition));
                 GUI.Label(new Rect(22, row.y + 10, 540, 34), Local(demo.Name, demo.EnglishName), heading);
@@ -293,7 +305,7 @@ namespace PolarityFacility
                 hover ? new Color32(31, 58, 77, 255) : Panel);
         }
 
-        private static void Fill(Rect rect, Color color)
+        internal static void Fill(Rect rect, Color color)
         {
             if (Event.current.type != EventType.Repaint) return;
             Color previous = GUI.color;

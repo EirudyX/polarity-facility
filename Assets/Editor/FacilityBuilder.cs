@@ -470,7 +470,8 @@ namespace PolarityFacility
 
         [MenuItem("Tools/Polarity Facility/Build Demo Menu for Windows")]
         public static void BuildDemoMenuWindows() =>
-            BuildWindowsPlayer(new[] { MenuScenePath, ScenePath, MassScenePath, RailScenePath }, "Windows-DemoMenu");
+            BuildWindowsPlayer(new[] { MenuScenePath, ScenePath, MassScenePath, RailScenePath, PumpScenePath, ClimbScenePath },
+                "Windows-DemoMenu");
 
         private static void BuildChallengeWindows(string scenePath, string folder) =>
             BuildWindowsPlayer(new[] { scenePath }, folder);

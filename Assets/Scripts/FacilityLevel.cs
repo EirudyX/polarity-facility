@@ -242,8 +242,8 @@ namespace PolarityFacility
                 pair = Mathf.Clamp(26 * (distance - .96f) + 6 * separating, -12, 24);
             }
             if (distance > MagnetRules.Range)
-                pair += Mathf.Min(90, (distance - MagnetRules.Range) * 44f +
-                    Mathf.Max(0, Vector3.Dot(bodies[1].linearVelocity - bodies[0].linearVelocity, line)) * 8);
+                pair += MagnetRules.TetherForce(distance,
+                    Vector3.Dot(bodies[1].linearVelocity - bodies[0].linearVelocity, line));
 
             for (int i = 0; i < 2; i++)
             {

@@ -2,19 +2,21 @@
 
 《极性失控》前期策划案的 Unity 3D 双球物理解谜切片。场景、美术与程序在工程内可编辑。原切片使用 Unity 2022.3.58f1c1，无第三方运行时插件。
 
-包含配重和磁轨演示的分支使用 Unity 6000.3.25f1。
+当前五项机制演示使用 Unity 6000.3.25f1。项目进度、验证记录和接续位置见 [HANDOFF.md](HANDOFF.md)。
 
 ## 选关与功能演示
 
-- 运行 `Build/Windows-DemoMenu/PolarityFacility.exe`，启动页预留「第 1 关」「第 2 关」。两个位置均显示「待制作」。
-- 点击右下角「功能演示」或按 `D` 打开演示列表。点击项目或按 `1`、`2`、`3`，分别进入双球磁力、配重转移、可翻转磁轨；进入后按 Enter 开始。
-- 演示内按 Esc 返回演示列表，开始后可按 `R` 重开。完成后按 Enter 或点击 `Demo List` 返回列表。在列表按 Esc 或点击「返回选关」回到启动页。
+- 本机已验证的最新试玩为 `Build/Windows-ClimbDemo/PolarityFacility.exe`。启动页预留「第 1 关」「第 2 关」，均显示「待制作」。通过菜单重建后的包位于 `Build/Windows-DemoMenu`。
+- 点击右下角「功能演示」或按 `D` 打开演示列表。点击项目或按 `1` 到 `5`，分别进入双球磁力、配重转移、可翻转磁轨、泵涌、磁吸攀壁。进入后按 Enter 开始。
+- 演示内按 Esc 返回演示列表，开始后可按 `R` 重开。完成后按 Enter 返回列表，前三项另有 `Demo List` 按钮。在列表按 Esc 或点击「返回选关」回到启动页。
 - 在 Unity 打开 `Assets/Scenes/LevelMenu.unity` 并点击 Play 可验证入口。通过 **Tools → Polarity Facility → Build Demo Menu for Windows** 构建完整的 Windows 试玩包。
-- 以下命令会对启动页和演示列表截图，分别从列表打开三个场景，自动跑通每个演示并验证返回列表。`-facilityCampaign` 沿用旧版的自动验证参数名。
+- 以下命令会对启动页和演示列表截图，分别打开五个场景，自动跑通每个演示并验证返回列表。`-facilityCampaign` 沿用旧版的自动验证参数名。
 
 ```powershell
 $prefix = Join-Path $env:TEMP 'polarity-demo-menu'
-& .\Build\Windows-DemoMenu\PolarityFacility.exe -facilityCampaign -facilityProof $prefix -logFile "$prefix.log"
+$player = '.\Build\Windows-ClimbDemo\PolarityFacility.exe'
+# 若刚通过 Unity 菜单重建，将 player 改为 .\Build\Windows-DemoMenu\PolarityFacility.exe
+& $player -facilityCampaign -facilityProof $prefix -logFile "$prefix.log"
 ```
 
 ## 配重转移与跨隙弹射
@@ -41,11 +43,26 @@ $prefix = Join-Path $env:TEMP 'polarity-rail'
 & .\Build\Windows-RailRelay\PolarityFacility.exe -facilityProof $prefix -logFile "$prefix.log"
 ```
 
+## 泵涌
+
+- 在功能演示列表按 `4`，再按 Enter。A 球固定在凹槽，按空格或右 Shift 切换 B 球磁极。
+- 让 B 球越过上坡后的断口，落到接收台。顶部显示首次和最快过线速度，以及撞墙前后的带符号速度。按 `R` 立即重试。
+- 试验道沿用现有磁力公式、理想弹性反弹和较低的滚动阻力。自动试玩比较单次弹射在坡中滚回与泵涌一轮后越过断口的结果。
+- 在 Unity 可直接打开 `Assets/Scenes/PumpSurge.unity`。**Tools → Polarity Facility → Rebuild Pump Surge Scene** 可重新生成场景。
+
+## 磁吸攀壁
+
+- 本轮修正版试玩为 `Build/Windows-ClimbDemo/PolarityFacility.exe`，包含全部五个演示。常规菜单构建命令仍会输出到 `Build/Windows-DemoMenu`。
+- 在功能演示列表按 `5`，再按 Enter。A / D 移动 A 球，方向键移动 B 球，右 Shift 或空格切换 B 球极性。R 重试，Esc 返回列表。
+- 墙与顶棚为 N 极。蓝色 B 球向左靠近墙后会吸附，按上或右沿磁面前进，下或左后退。在顶棚上切成红色会脱离并受到排斥，保持向右移动落到对岸接收台，升起下方桥梁。两球沿右侧路线抵达出口后完成演示。
+- 本原型使用磁面吸附约束、沿面驱动与真实重力下落。自动试玩验证同极排斥、异极吸附、墙角过渡、顶棚停留、切极落台、双球出场与重试复位。
+- Unity 场景为 `Assets/Scenes/MagneticClimb.unity`，**Tools → Polarity Facility → Rebuild Magnetic Climb Scene** 可重新生成。
+
 ## 试玩
 
 - Windows 包解压后运行 `PolarityFacility.exe`，Enter 开始。
-- 初始 A 球用 WASD 移动、Q 切极。B 球用方向键移动、右 Shift 切极。Tab 交换两组键位的目标球，R 重开。
-- 游戏内只提供操作键位与同极相斥、异极相吸。完整课堂演示路线见配套 Word。
+- 前三项演示中，A 球用 WASD 移动、Q 切极，B 球用方向键移动、右 Shift 切极。Tab 交换两组键位的目标球，R 重开。泵涌与磁吸攀壁的操作见各自章节。
+- 功能演示保留操作、目标与状态反馈。完整课堂演示路线见配套 Word。
 
 ## Unity 工程
 
@@ -57,6 +74,6 @@ $prefix = Join-Path $env:TEMP 'polarity-rail'
 
 ## 实践范围
 
-双球磁力演示实现接触锁定、凹槽锚定、排斥弹射、距离牵制、固定磁极、双球压盘与出场。配重转移演示增加动态质量，磁轨演示增加可翻转的环境磁极。原策划案的泵涌和在线联机属于后续功能。
+双球磁力演示实现接触锁定、凹槽锚定、排斥弹射、距离牵制、固定磁极、双球压盘与出场。配重转移演示增加动态质量，磁轨演示增加可翻转的环境磁极。泵涌演示使用弹性反弹墙积累速度并飞越断口，磁吸攀壁演示验证墙面与顶棚吸附、切极落台和双球协作。在线联机属于后续功能。
 
 采用 unity-dod-architecture、ui-imgui、unity-ui-ux-checklist 的工作流，借鉴 unity-development 的本地验证顺序。相关原始文档见配套 Word。

@@ -16,6 +16,11 @@ namespace PolarityFacility
             return same ? -force : force;
         }
 
+        public static float TetherForce(float distance, float separatingSpeed)
+            => distance > Range
+                ? Mathf.Min(90, (distance - Range) * 44f + Mathf.Max(0, separatingSpeed) * 8)
+                : 0;
+
         public static Vector3 Planar(Vector3 value) => new Vector3(value.x, 0, value.z);
         public static float Distance(Vector3 a, Vector3 b) => Planar(a - b).magnitude;
 

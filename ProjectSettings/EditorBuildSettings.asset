@@ -17,5 +17,11 @@ EditorBuildSettings:
   - enabled: 1
     path: Assets/Scenes/RailRelay.unity
     guid: e817922bbc15fd445957ec37c9209d60
+  - enabled: 1
+    path: Assets/Scenes/PumpSurge.unity
+    guid: d0881fa95bee59f4ea036a473143630c
+  - enabled: 1
+    path: Assets/Scenes/MagneticClimb.unity
+    guid: b86018011bad5d44696e6f1aef9a3836
   m_configObjects: {}
   m_UseUCBPForAssetBundles: 0
