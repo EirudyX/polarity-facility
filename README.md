@@ -4,18 +4,23 @@
 
 当前五项机制演示使用 Unity 6000.3.25f1。项目进度、验证记录和接续位置见 [HANDOFF.md](HANDOFF.md)。
 
+## 配重试验场美术样板
+
+- 运行 `Build/Windows-FoundryPreview/PolarityFacility.exe` 进入独立样板。按 Enter 开始，A 球用 WASD 和 Q，B 球用方向键和右 Shift，按 R 重试。
+- 样板复用配重演示的路线与物理，展示废弃工厂的钢构、蓝色磁雾、荧光球壳和接收台升桥反馈。首轮云上版本保存在 `Build/Windows-ArtPreview`，可用于对照。
+- Unity 中使用 **Tools → Polarity Facility → Rebuild Art Preview** 生成可编辑的样板。**Build Art Preview for Windows** 会重建独立包。生成场景和材质位于 `Assets/Art/FacilityPreviewGenerated`，可由场景生成器还原。
+
 ## 选关与功能演示
 
-- 本机已验证的最新试玩为 `Build/Windows-ClimbDemo/PolarityFacility.exe`。启动页预留「第 1 关」「第 2 关」，均显示「待制作」。通过菜单重建后的包位于 `Build/Windows-DemoMenu`。
-- 点击右下角「功能演示」或按 `D` 打开演示列表。点击项目或按 `1` 到 `5`，分别进入双球磁力、配重转移、可翻转磁轨、泵涌、磁吸攀壁。进入后按 Enter 开始。
-- 演示内按 Esc 返回演示列表，开始后可按 `R` 重开。完成后按 Enter 返回列表，前三项另有 `Demo List` 按钮。在列表按 Esc 或点击「返回选关」回到启动页。
-- 在 Unity 打开 `Assets/Scenes/LevelMenu.unity` 并点击 Play 可验证入口。通过 **Tools → Polarity Facility → Build Demo Menu for Windows** 构建完整的 Windows 试玩包。
+- 本机最新试玩为 `Build/Windows-FoundryConsole/PolarityFacility.exe`。五项演示采用废弃磁力工厂的美术方案，各自保留原有路线和机关。启动页预留「第 1 关」「第 2 关」，均显示「待制作」。
+- 点击「进入功能演示」或按 `D` 打开演示列表。点击项目或按上下键切换实机预览，按 Enter 或点击「进入演示」打开所选项目。数字 `1` 到 `5` 可直达双球磁力、配重转移、可翻转磁轨、泵涌和磁吸攀壁。进入房间后按 Enter 开始。
+- 演示内按 Esc 返回演示列表，按 `R` 重开。完成后可点击「返回演示列表」或「重试」，也可以用相应快捷键。在列表按 Esc 或点击「返回选关」回到启动页。
+- 在 Unity 中使用 **Tools → Polarity Facility → Rebuild Foundry Demos** 生成五个带美术的场景并打开选关页，再按 Play。通过 **Build Demo Menu for Windows** 可生成完整试玩包。
 - 以下命令会对启动页和演示列表截图，分别打开五个场景，自动跑通每个演示并验证返回列表。`-facilityCampaign` 沿用旧版的自动验证参数名。
 
 ```powershell
 $prefix = Join-Path $env:TEMP 'polarity-demo-menu'
-$player = '.\Build\Windows-ClimbDemo\PolarityFacility.exe'
-# 若刚通过 Unity 菜单重建，将 player 改为 .\Build\Windows-DemoMenu\PolarityFacility.exe
+$player = '.\Build\Windows-FoundryConsole\PolarityFacility.exe'
 & $player -facilityCampaign -facilityProof $prefix -logFile "$prefix.log"
 ```
 
@@ -52,7 +57,6 @@ $prefix = Join-Path $env:TEMP 'polarity-rail'
 
 ## 磁吸攀壁
 
-- 本轮修正版试玩为 `Build/Windows-ClimbDemo/PolarityFacility.exe`，包含全部五个演示。常规菜单构建命令仍会输出到 `Build/Windows-DemoMenu`。
 - 在功能演示列表按 `5`，再按 Enter。A / D 移动 A 球，方向键移动 B 球，右 Shift 或空格切换 B 球极性。R 重试，Esc 返回列表。
 - 墙与顶棚为 N 极。蓝色 B 球向左靠近墙后会吸附，按上或右沿磁面前进，下或左后退。在顶棚上切成红色会脱离并受到排斥，保持向右移动落到对岸接收台，升起下方桥梁。两球沿右侧路线抵达出口后完成演示。
 - 本原型使用磁面吸附约束、沿面驱动与真实重力下落。自动试玩验证同极排斥、异极吸附、墙角过渡、顶棚停留、切极落台、双球出场与重试复位。

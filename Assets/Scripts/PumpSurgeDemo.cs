@@ -24,18 +24,15 @@ namespace PolarityFacility
 
         private enum Stage { Ready, Running, Fell, Complete }
 
-        private static readonly Color Text = new Color32(234, 242, 249, 255);
-        private static readonly Color Muted = new Color32(171, 191, 210, 255);
         private static readonly Color Cyan = new Color32(107, 221, 255, 255);
-        private static readonly Color Gold = new Color32(255, 204, 113, 255);
-        private static readonly Color Panel = new Color32(12, 24, 39, 241);
         private static readonly Color North = new Color32(255, 89, 91, 225);
         private static readonly Color South = new Color32(94, 181, 255, 225);
 
         private Stage stage;
         private Vector3 spawn;
         private Font font;
-        private GUIStyle label;
+        private FacilityHud hud;
+        private readonly FacilityCompletionMenu completionMenu = new FacilityCompletionMenu();
         private bool same, pendingFlip, proof;
         private float lastDistance, speed, baseline, best;
         private float incomingWallSpeed, outgoingWallSpeed, wallFlashUntil;
@@ -73,6 +70,7 @@ namespace PolarityFacility
 
         private void ResetRun(Stage next)
         {
+            completionMenu.Reset();
             stage = next;
             same = pendingFlip = false;
             passes = 0;
@@ -215,32 +213,30 @@ namespace PolarityFacility
 
         private void OnGUI()
         {
-            label ??= new GUIStyle(GUI.skin.label)
+            if (stage == Stage.Complete && LevelNavigation.MenuAvailable)
             {
-                font = font != null ? font : GUI.skin.font,
-                alignment = TextAnchor.MiddleLeft,
-                clipping = TextClipping.Clip
-            };
-            const float width = 1120, height = 630;
-            float scale = Mathf.Min(Screen.width / width, Screen.height / height);
-            Matrix4x4 previous = GUI.matrix;
-            GUI.matrix = Matrix4x4.TRS(new Vector3((Screen.width - width * scale) / 2,
-                (Screen.height - height * scale) / 2, 0), Quaternion.identity, new Vector3(scale, scale, 1));
-
-            LevelNavigation.Fill(new Rect(44, 34, 1032, 108), Panel);
-            LevelNavigation.Fill(new Rect(44, 34, 4, 108), Cyan);
-            Caption(68, 48, 284, 48, 34, Text, Local("泵涌", "Magnetic pumping"));
-            Caption(69, 100, 275, 24, 16, Muted, Local("磁力试验 · 断口", "Magnetic test · Gap crossing"));
-            Readout(356, Local("首次过线", "FIRST PASS"), SpeedText(baseline, passes > 0));
-            Readout(508, Local("最快过线", "BEST PASS"), SpeedText(best, passes > 0));
-            Readout(660, Local("当前球速", "BALL SPEED"), SpeedText(Mathf.Abs(speed), stage == Stage.Running));
-            Readout(812, Local("撞墙前 → 撞墙后", "WALL IN → OUT"),
+                var action = completionMenu.Draw(font, $"{baseline:F2} → {best:F2} m/s");
+                if (!proof && action == FacilityCompletionMenu.Action.Return) LevelNavigation.ReturnToDemoList();
+                if (!proof && action == FacilityCompletionMenu.Action.Retry) ResetRun(Stage.Running);
+                return;
+            }
+            if (Event.current.type != EventType.Repaint) return;
+            hud ??= new FacilityHud(font);
+            Matrix4x4 previous = LevelNavigation.BeginScaledGUI();
+            hud.Header(new Rect(34, 28, 267, 73), "04", Local("泵涌", "Magnetic pumping"), FacilityConsole.Cyan);
+            FacilityConsole.Panel(new Rect(319, 28, 767, 73));
+            FacilityConsole.Trace(334, 30, 52, FacilityConsole.Cyan);
+            for (int i = 0; i < 3; i++)
+                FacilityConsole.Fill(new Rect(493 + i * 165, 44, 1, 41), FacilityConsole.Line);
+            hud.Metric(new Rect(336, 38, 150, 52), Local("首次过线", "First pass"), SpeedText(baseline, passes > 0));
+            hud.Metric(new Rect(509, 38, 146, 52), Local("最快过线", "Best pass"), SpeedText(best, passes > 0));
+            hud.Metric(new Rect(674, 38, 145, 52), Local("当前球速", "Ball speed"), SpeedText(Mathf.Abs(speed), stage == Stage.Running));
+            hud.Metric(new Rect(839, 38, 231, 52), Local("撞墙前 → 撞墙后", "Wall in → out"),
                 outgoingWallSpeed > 0 ? $"{incomingWallSpeed:F2} → +{outgoingWallSpeed:F2} m/s" : "—");
-
-            LevelNavigation.Fill(new Rect(44, 487, 1032, 110), Panel);
-            LevelNavigation.Fill(new Rect(44, 487, 4, 110), stage == Stage.Complete ? Cyan : Gold);
-            Caption(68, 500, 984, 39, 24, stage == Stage.Complete ? Cyan : Text, Prompt());
-            Caption(68, 552, 984, 26, 16, Muted, Controls());
+            Color state = stage == Stage.Fell ? FacilityConsole.Red
+                : stage == Stage.Ready ? FacilityConsole.Amber : FacilityConsole.Cyan;
+            hud.Status(new Rect(34, 540, 620, 63), Prompt(), Controls(), state,
+                stage == Stage.Ready || stage == Stage.Fell ? "Enter" : null);
             GUI.matrix = previous;
         }
 
@@ -248,6 +244,8 @@ namespace PolarityFacility
         {
             switch (stage)
             {
+                case Stage.Ready:
+                    return Local("开始泵涌试验", "Start the rebound test");
                 case Stage.Fell:
                     return Local("B 球落入断口。", "B fell into the gap.");
                 case Stage.Complete:
@@ -271,19 +269,6 @@ namespace PolarityFacility
         private string Local(string chinese, string english) => font != null ? chinese : english;
 
         private static string SpeedText(float value, bool hasValue) => hasValue ? $"{value:F2} m/s" : "—";
-
-        private void Readout(float x, string title, string value)
-        {
-            Caption(x, 51, 244, 24, 16, Muted, title);
-            Caption(x, 78, 244, 47, 22, Cyan, value);
-        }
-
-        private void Caption(float x, float y, float width, float height, int size, Color color, string value)
-        {
-            label.fontSize = size;
-            label.normal.textColor = color;
-            GUI.Label(new Rect(x, y, width, height), value, label);
-        }
 
         private IEnumerator Prove(string prefix)
         {

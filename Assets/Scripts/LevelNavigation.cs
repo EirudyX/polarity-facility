@@ -8,7 +8,9 @@ namespace PolarityFacility
     public sealed class LevelNavigation : MonoBehaviour
     {
         private const string MenuScene = "LevelMenu";
-        private const float Width = 1120, Height = 630;
+        public const string FoundrySceneFolder = "Assets/Art/FacilityPreviewGenerated";
+        internal const float LayoutWidth = 1120;
+        private const float LayoutHeight = 630;
 
         private readonly struct Demo
         {
@@ -39,19 +41,14 @@ namespace PolarityFacility
                 "Climb the wall and ceiling, then flip to land and open the other sphere's route.")
         };
 
-        private static readonly Color Background = new Color32(12, 22, 35, 255);
-        private static readonly Color Panel = new Color32(24, 39, 55, 255);
-        private static readonly Color Border = new Color32(52, 77, 98, 255);
-        private static readonly Color Text = new Color32(233, 240, 247, 255);
-        private static readonly Color Muted = new Color32(153, 177, 198, 255);
-        private static readonly Color Cyan = new Color32(91, 207, 249, 255);
-        private static readonly Color Red = new Color32(255, 102, 105, 255);
         private static bool reopenDemos;
-        private static int proofIndex;
+        private static int proofIndex, lastDemoIndex;
         private bool showingDemos;
-        private Vector2 demoScroll;
+        private int selected, previousSelection, pendingDemo = -1;
+        private float pageOpened, previewChanged, transitionAt;
+        private readonly Texture2D[] previews = new Texture2D[Demos.Length];
         private Font menuFont;
-        private GUIStyle title, heading, body, small, centered;
+        private GUIStyle title, heading, detail, small, accent, centered, button, rowTitle;
 
         internal static bool MenuAvailable => Application.CanStreamedLevelBeLoaded(MenuScene);
         internal static bool DemoTourProof { get; private set; }
@@ -60,7 +57,7 @@ namespace PolarityFacility
         private static void ResetNavigation()
         {
             reopenDemos = DemoTourProof = false;
-            proofIndex = 0;
+            proofIndex = lastDemoIndex = 0;
         }
 
         internal static void ReturnToDemoList()
@@ -74,7 +71,11 @@ namespace PolarityFacility
         {
             showingDemos = reopenDemos;
             reopenDemos = false;
+            selected = previousSelection = lastDemoIndex;
+            pageOpened = previewChanged = Time.unscaledTime;
             menuFont = FindChineseFont();
+            for (int i = 0; i < Demos.Length; i++)
+                previews[i] = Resources.Load<Texture2D>("FoundryInterface/" + Demos[i].Scene);
         }
 
         internal static Font FindChineseFont()
@@ -99,6 +100,16 @@ namespace PolarityFacility
         {
             if (!showingDemos || index < 0 || index >= Demos.Length) return false;
             string scene = Demos[index].Scene;
+            lastDemoIndex = index;
+#if UNITY_EDITOR
+            string foundryPath = $"{FoundrySceneFolder}/{scene}.unity";
+            if (UnityEditor.AssetDatabase.LoadAssetAtPath<UnityEditor.SceneAsset>(foundryPath) != null)
+            {
+                UnityEditor.SceneManagement.EditorSceneManager.LoadSceneInPlayMode(foundryPath,
+                    new LoadSceneParameters(LoadSceneMode.Single));
+                return true;
+            }
+#endif
             if (!Application.CanStreamedLevelBeLoaded(scene)) return false;
             SceneManager.LoadScene(scene);
             return true;
@@ -152,22 +163,62 @@ namespace PolarityFacility
         internal static IEnumerator CaptureFrame(string path)
         {
             yield return new WaitForEndOfFrame();
-            var image = new Texture2D(Screen.width, Screen.height, TextureFormat.RGB24, false);
-            image.ReadPixels(new Rect(0, 0, Screen.width, Screen.height), 0, 0);
-            System.IO.File.WriteAllBytes(path, image.EncodeToPNG());
-            Destroy(image);
+            Camera view = Camera.main;
+            if (view != null && view.GetComponent<FacilityFoundryAtmosphere>() != null)
+                CaptureSceneCamera(view, path);
+            else
+            {
+                var image = new Texture2D(Screen.width, Screen.height, TextureFormat.RGB24, false);
+                image.ReadPixels(new Rect(0, 0, Screen.width, Screen.height), 0, 0);
+                System.IO.File.WriteAllBytes(path, image.EncodeToPNG());
+                Destroy(image);
+            }
             yield return new WaitForEndOfFrame();
+        }
+
+        internal static void CaptureSceneCamera(Camera view, string path)
+        {
+            var target = RenderTexture.GetTemporary(1600, 900, 24, RenderTextureFormat.ARGB32, RenderTextureReadWrite.Default, 4);
+            var previous = RenderTexture.active;
+            var previousTarget = view.targetTexture;
+            var image = new Texture2D(1600, 900, TextureFormat.RGB24, false);
+            try
+            {
+                view.targetTexture = target;
+                view.Render();
+                RenderTexture.active = target;
+                image.ReadPixels(new Rect(0, 0, 1600, 900), 0, 0);
+                System.IO.File.WriteAllBytes(path, image.EncodeToPNG());
+            }
+            finally
+            {
+                view.targetTexture = previousTarget;
+                RenderTexture.active = previous;
+                RenderTexture.ReleaseTemporary(target);
+                Destroy(image);
+            }
         }
 
         private void ShowDemoList()
         {
-            demoScroll = Vector2.zero;
             showingDemos = true;
+            pageOpened = previewChanged = Time.unscaledTime;
+            selected = previousSelection = lastDemoIndex;
         }
 
         private void Update()
         {
             if (DemoTourProof) return;
+            if (pendingDemo >= 0)
+            {
+                if (Time.unscaledTime - transitionAt >= .20f)
+                {
+                    int index = pendingDemo;
+                    pendingDemo = -1;
+                    OpenDemo(index);
+                }
+                return;
+            }
             if (!showingDemos)
             {
                 if (Input.GetKeyDown(KeyCode.D)) ShowDemoList();
@@ -175,14 +226,21 @@ namespace PolarityFacility
             }
             if (Input.GetKeyDown(KeyCode.Escape))
             {
-                showingDemos = false;
+                ShowLevelSelect();
+                return;
+            }
+            if (Input.GetKeyDown(KeyCode.UpArrow)) SelectDemo((selected + Demos.Length - 1) % Demos.Length);
+            if (Input.GetKeyDown(KeyCode.DownArrow)) SelectDemo((selected + 1) % Demos.Length);
+            if (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter))
+            {
+                QueueDemo(selected);
                 return;
             }
             for (int i = 0; i < Demos.Length && i < 9; i++)
             {
                 if (Input.GetKeyDown((KeyCode)((int)KeyCode.Alpha1 + i)))
                 {
-                    OpenDemo(i);
+                    QueueDemo(i);
                     return;
                 }
             }
@@ -190,119 +248,155 @@ namespace PolarityFacility
 
         private string Local(string chinese, string english) => menuFont != null ? chinese : english;
 
+        private void ShowLevelSelect()
+        {
+            showingDemos = false;
+            pageOpened = Time.unscaledTime;
+        }
+
+        private void SelectDemo(int index)
+        {
+            if (index == selected) return;
+            previousSelection = selected;
+            selected = lastDemoIndex = index;
+            previewChanged = Time.unscaledTime;
+        }
+
+        private void QueueDemo(int index)
+        {
+            if (pendingDemo >= 0 || !Application.CanStreamedLevelBeLoaded(Demos[index].Scene)) return;
+            SelectDemo(index);
+            pendingDemo = index;
+            transitionAt = Time.unscaledTime;
+        }
+
         private void OnGUI()
         {
             if (title == null)
             {
-                title = Style(63, Text, FontStyle.Bold);
-                heading = Style(27, Text, FontStyle.Bold);
-                body = Style(17, Muted);
-                small = Style(14, Cyan, FontStyle.Bold);
-                centered = Style(16, Text, FontStyle.Bold, TextAnchor.MiddleCenter);
+                title = FacilityConsole.TextStyle(menuFont, menuFont != null ? 76 : 55, FacilityConsole.Text, FontStyle.Bold);
+                heading = FacilityConsole.TextStyle(menuFont, 40, FacilityConsole.Text, FontStyle.Bold);
+                detail = FacilityConsole.TextStyle(menuFont, 16, FacilityConsole.Muted);
+                small = FacilityConsole.TextStyle(menuFont, 13, FacilityConsole.Muted, FontStyle.Bold);
+                accent = FacilityConsole.TextStyle(menuFont, 14, FacilityConsole.Cyan, FontStyle.Bold);
+                centered = FacilityConsole.TextStyle(menuFont, 13, FacilityConsole.Text, FontStyle.Bold, TextAnchor.MiddleCenter);
+                button = FacilityConsole.TextStyle(menuFont, 20, FacilityConsole.Text, FontStyle.Bold);
+                rowTitle = FacilityConsole.TextStyle(menuFont, menuFont != null ? 23 : 19, FacilityConsole.Text, FontStyle.Bold);
             }
 
-            Fill(new Rect(0, 0, Screen.width, Screen.height), Background);
-            float scale = Mathf.Min(Screen.width / Width, Screen.height / Height);
-            Matrix4x4 previous = GUI.matrix;
-            GUI.matrix = Matrix4x4.TRS(
-                new Vector3((Screen.width - Width * scale) / 2, (Screen.height - Height * scale) / 2, 0),
-                Quaternion.identity, new Vector3(scale, scale, 1));
-
-            for (int i = 1; i < 28; i++)
-                Fill(new Rect(40 * i, 0, 1, Height), new Color(0.35f, 0.55f, 0.72f, 0.06f));
-            Fill(new Rect(72, 81, 976, 1), Border);
-            Fill(new Rect(72, 81, 43, 2), Cyan);
-            GUI.Label(new Rect(72, 42, 410, 26), "POLARITY FACILITY", small);
-
+            FacilityConsole.Fill(new Rect(0, 0, Screen.width, Screen.height), FacilityConsole.Background);
+            Matrix4x4 previous = BeginScaledGUI();
+            Color previousColor = GUI.color;
+            float entrance = DemoTourProof ? 1 : FacilityConsole.Ease(Time.unscaledTime - pageOpened, .24f);
+            GUI.color = previousColor * new Color(1, 1, 1, Mathf.Lerp(.64f, 1, entrance));
+            GUI.matrix *= Matrix4x4.Translate(Vector3.up * ((1 - entrance) * 9));
             if (showingDemos) DrawDemoList();
             else DrawLevelSelect();
+
+            GUI.color = previousColor;
             GUI.matrix = previous;
+            if (pendingDemo >= 0)
+                FacilityConsole.Fill(new Rect(0, 0, Screen.width, Screen.height),
+                    new Color(.025f, .05f, .085f, FacilityConsole.Ease(Time.unscaledTime - transitionAt, .22f)));
         }
 
         private void DrawLevelSelect()
         {
-            GUI.Label(new Rect(72, 117, 740, 92), Local("极性失控", "Polarity Facility"), title);
-            GUI.Label(new Rect(72, 224, 620, 46), Local("选择关卡", "Select a level"), heading);
-            Fill(new Rect(907, 158, 85, 2), Border);
-            DrawPole(new Rect(861, 136, 46, 46), Red, "N");
-            DrawPole(new Rect(992, 136, 46, 46), Cyan, "S");
+            var hero = new Rect(379, 29, 704, 570);
+            FacilityConsole.Panel(hero);
+            var picture = new Rect(hero.x + 5, hero.y + 5, hero.width - 10, hero.height - 10);
+            DrawPreview(picture, previews[2], .96f);
+            FacilityConsole.LeftShade(new Rect(379, 29, 296, 570), FacilityConsole.Background);
+            FacilityConsole.BottomShade(new Rect(422, 455, 657, 140), new Color32(6, 13, 23, 236));
+            FacilityConsole.FrameCorners(new Rect(659, 34, 419, 560), new Color32(95, 156, 184, 175), 16);
+            FacilityConsole.Trace(968, 48, 94, FacilityConsole.Cyan);
+            FacilityConsole.Light(50, 56, FacilityConsole.Cyan);
+            GUI.Label(new Rect(68, 46, 293, 27), "POLARITY FACILITY", accent);
+            FacilityConsole.Fill(new Rect(50, 84, 311, 1), FacilityConsole.Line);
 
+            GUI.Label(new Rect(47, 140, 484, 102), Local("极性失控", "Polarity Facility"), title);
+            GUI.Label(new Rect(52, 242, 329, 34), Local("双球磁力解谜", "Dual-sphere magnetic puzzles"), detail);
+            FacilityConsole.Trace(52, 299, 48, FacilityConsole.Cyan);
+            if (FacilityConsole.Action(new Rect(50, 322, 320, 64), Local("进入功能演示", "Feature demos"),
+                    "D", button, centered, true))
+                ShowDemoList();
+
+            GUI.Label(new Rect(52, 436, 302, 26), Local("正式关卡", "Campaign"), small);
             for (int i = 0; i < 2; i++)
             {
-                var rect = new Rect(72 + 500 * i, 290, 476, 164);
-                Card(rect, false);
-                GUI.Label(new Rect(rect.x + 25, rect.y + 31, 416, 41),
-                    Local($"第 {i + 1} 关", $"Level {i + 1}"), heading);
-                GUI.Label(new Rect(rect.x + 25, rect.y + 95, 416, 29),
-                    Local("待制作", "In development"), body);
+                var row = new Rect(50, 470 + i * 49, 320, 40);
+                FacilityConsole.Panel(row, true);
+                GUI.Label(new Rect(row.x + 13, row.y, 121, row.height),
+                    Local($"第 {i + 1} 关", $"Level {i + 1}"), detail);
+                GUI.Label(new Rect(row.x + 199, row.y, 112, row.height),
+                    Local("待制作", "In development"), small);
             }
-
-            if (Action(new Rect(867, 543, 181, 47), Local("功能演示  [D]", "Feature demos  [D]")))
-                ShowDemoList();
-        }
-
-        private void DrawPole(Rect rect, Color accent, string pole)
-        {
-            Card(rect, false);
-            Fill(new Rect(rect.x, rect.y, rect.width, 2), accent);
-            GUI.Label(rect, pole, centered);
+            GUI.Label(new Rect(903, 554, 155, 27), Local("可翻转磁轨", "Reversible rail"), centered);
         }
 
         private void DrawDemoList()
         {
-            GUI.Label(new Rect(72, 115, 680, 92), Local("功能演示", "Feature demos"), title);
-            if (Action(new Rect(867, 139, 181, 47), Local("返回选关  [Esc]", "Level select  [Esc]")))
+            FacilityConsole.Light(50, 44, FacilityConsole.Cyan);
+            GUI.Label(new Rect(68, 32, 410, 30), "POLARITY FACILITY", accent);
+            FacilityConsole.Fill(new Rect(48, 72, 1025, 1), FacilityConsole.Line);
+            GUI.Label(new Rect(47, 87, 673, 53), Local("功能演示", "Feature demos"), heading);
+            if (FacilityConsole.Action(new Rect(882, 26, 192, 40), Local("返回选关", "Level select"),
+                    "Esc", detail, centered, false))
             {
-                showingDemos = false;
+                ShowLevelSelect();
                 return;
             }
 
-            const float rowHeight = 91, cardHeight = 77, viewHeight = 356;
-            var viewport = new Rect(72, 234, 976, viewHeight);
-            float contentHeight = (Demos.Length - 1) * rowHeight + cardHeight;
-            float rowWidth = contentHeight > viewHeight ? 950 : viewport.width;
-            demoScroll = GUI.BeginScrollView(viewport, demoScroll,
-                new Rect(0, 0, rowWidth, contentHeight));
-            int selected = -1;
             for (int i = 0; i < Demos.Length; i++)
             {
-                Demo demo = Demos[i];
-                var row = new Rect(0, i * rowHeight, rowWidth, cardHeight);
-                bool available = Application.CanStreamedLevelBeLoaded(demo.Scene);
-                Card(row, available && row.Contains(Event.current.mousePosition));
-                GUI.Label(new Rect(22, row.y + 10, 540, 34), Local(demo.Name, demo.EnglishName), heading);
-                GUI.Label(new Rect(24, row.y + 45, 690, 23), Local(demo.Description, demo.EnglishDescription), body);
-                string suffix = i < 9 ? $"  [{i + 1}]" : "";
-                GUI.Label(new Rect(rowWidth - 137, row.y, 115, row.height),
-                    available ? Local("打开", "Open") + suffix : Local("暂不可用", "Unavailable"), centered);
-                if (available && GUI.Button(row, GUIContent.none, GUIStyle.none)) selected = i;
+                Demo item = Demos[i];
+                var row = new Rect(48, 157 + i * 76, 317, 62);
+                FacilityConsole.Row(row, i == selected, row.Contains(Event.current.mousePosition));
+                FacilityConsole.Key(new Rect(row.x + 13, row.y + 17, 31, 28), (i + 1).ToString(), centered);
+                GUI.Label(new Rect(row.x + 55, row.y, 207, row.height), Local(item.Name, item.EnglishName), rowTitle);
+                if (GUI.Button(new Rect(row.x, row.y, row.width - 43, row.height), GUIContent.none, GUIStyle.none))
+                    SelectDemo(i);
+                if (FacilityConsole.Action(new Rect(row.xMax - 39, row.y + 13, 29, 36), "›", null, centered, centered, false))
+                    QueueDemo(i);
             }
-            GUI.EndScrollView();
-            if (selected >= 0) OpenDemo(selected);
+            GUI.Label(new Rect(48, 558, 320, 27),
+                Local("↑ / ↓  切换预览       1–5  直接进入", "↑ / ↓  Browse       1–5  Open"), small);
+
+            var frame = new Rect(395, 157, 679, 339);
+            FacilityConsole.Panel(frame);
+            var area = new Rect(frame.x + 5, frame.y + 5, frame.width - 10, frame.height - 10);
+            float fade = FacilityConsole.Ease(Time.unscaledTime - previewChanged, .26f);
+            if (fade < 1) DrawPreview(area, previews[previousSelection], 1);
+            DrawPreview(area, previews[selected], fade);
+            FacilityConsole.BottomShade(new Rect(area.x, area.yMax - 68, area.width, 68), new Color32(5, 12, 22, 162));
+            FacilityConsole.FrameCorners(area, new Color32(102, 195, 224, 208), 18);
+            FacilityConsole.Trace(frame.x + 19, frame.y + 5, 57, FacilityConsole.Cyan);
+
+            Demo demo = Demos[selected];
+            GUI.Label(new Rect(399, 513, 459, 32), Local(demo.Name, demo.EnglishName), rowTitle);
+            GUI.Label(new Rect(399, 548, 444, 26), Local(demo.Description, demo.EnglishDescription), detail);
+            if (FacilityConsole.Action(new Rect(858, 514, 216, 60), Local("进入演示", "Open demo"),
+                    "Enter", button, centered, true))
+                QueueDemo(selected);
         }
 
-        private GUIStyle Style(int size, Color color, FontStyle weight = FontStyle.Normal,
-            TextAnchor alignment = TextAnchor.MiddleLeft) => new GUIStyle(GUI.skin.label)
+        private static void DrawPreview(Rect rect, Texture2D texture, float opacity)
         {
-            font = menuFont != null ? menuFont : GUI.skin.font,
-            fontSize = size,
-            fontStyle = weight,
-            alignment = alignment,
-            normal = { textColor = color }
-        };
-
-        private bool Action(Rect rect, string label)
-        {
-            Card(rect, rect.Contains(Event.current.mousePosition));
-            GUI.Label(rect, label, centered);
-            return GUI.Button(rect, GUIContent.none, GUIStyle.none);
+            if (texture == null || Event.current.type != EventType.Repaint) return;
+            Color previous = GUI.color;
+            GUI.color = previous * new Color(1, 1, 1, opacity);
+            GUI.DrawTexture(rect, texture, ScaleMode.ScaleAndCrop);
+            GUI.color = previous;
         }
 
-        private static void Card(Rect rect, bool hover)
+        internal static Matrix4x4 BeginScaledGUI()
         {
-            Fill(rect, hover ? Cyan : Border);
-            Fill(new Rect(rect.x + 1, rect.y + 1, rect.width - 2, rect.height - 2),
-                hover ? new Color32(31, 58, 77, 255) : Panel);
+            float scale = Mathf.Min(Screen.width / LayoutWidth, Screen.height / LayoutHeight);
+            Matrix4x4 previous = GUI.matrix;
+            GUI.matrix = Matrix4x4.TRS(
+                new Vector3((Screen.width - LayoutWidth * scale) / 2, (Screen.height - LayoutHeight * scale) / 2, 0),
+                Quaternion.identity, new Vector3(scale, scale, 1));
+            return previous;
         }
 
         internal static void Fill(Rect rect, Color color)

@@ -20,8 +20,13 @@ namespace PolarityFacility
         [SerializeField] private Camera view;
         [SerializeField] private MassTransferStation massTransfer;
         [SerializeField] private RailRelay railRelay;
+        [SerializeField] private FacilityPreviewPresentation artPreview;
+
+        internal bool HasStarted => started;
+        internal bool IsComplete => complete;
 
         private const float TransferPadRadius = .66f;
+        private const float TerminalPadRadius = .72f;
 
         private static readonly Color North = new Color(1f, .24f, .23f);
         private static readonly Color South = new Color(.18f, .68f, 1f);
@@ -72,6 +77,7 @@ namespace PolarityFacility
 
         private void ResetLevel(bool play)
         {
+            completionMenu.Reset();
             started = play;
             latched = bridgePowered = gatePowered = complete = false;
             sawLatch = sawLaunch = sawLand = sawBothFlips = false;
@@ -267,6 +273,10 @@ namespace PolarityFacility
                         acceleration += toRail / railDistance * (north[i] ? force : -force);
                     }
                 }
+                // A resting ball should stay on its pressure plate while the player moves the other ball.
+                if (gate != null && drive[i] == Vector3.zero && planar.sqrMagnitude < 4f
+                    && (At(i, socketLeft, TerminalPadRadius) || At(i, socketRight, TerminalPadRadius)))
+                    acceleration = -planar * 16f;
                 body.AddForce(acceleration, ForceMode.Acceleration);
                 if (railRelay != null)
                     body.AddForce(railRelay.ForceAt(body.position, north[i]), ForceMode.Force);
@@ -347,8 +357,8 @@ namespace PolarityFacility
 
         private void UpdateTerminal(float dt)
         {
-            bool leftA = At(0, socketLeft, .63f), leftB = At(1, socketLeft, .63f);
-            bool rightA = At(0, socketRight, .63f), rightB = At(1, socketRight, .63f);
+            bool leftA = At(0, socketLeft, TerminalPadRadius), leftB = At(1, socketLeft, TerminalPadRadius);
+            bool rightA = At(0, socketRight, TerminalPadRadius), rightB = At(1, socketRight, TerminalPadRadius);
             socketLightLeft.sharedMaterial = leftA || leftB || gatePowered ? readyLight : standbyLight;
             socketLightRight.sharedMaterial = rightA || rightB || gatePowered ? readyLight : standbyLight;
             socketHold = MagnetRules.TwoSockets(leftA, rightA, leftB, rightB) ? socketHold + dt : 0;
@@ -397,16 +407,17 @@ namespace PolarityFacility
         }
 
         private GUIStyle text;
+        private readonly FacilityCompletionMenu completionMenu = new FacilityCompletionMenu();
         private void OnGUI()
         {
-            if (proof) return;
-            text ??= new GUIStyle(GUI.skin.label) { alignment = TextAnchor.MiddleCenter, fontStyle = FontStyle.Bold };
             if (complete && LevelNavigation.MenuAvailable)
             {
                 DrawCompletionMenu();
                 return;
             }
-            if (Event.current.type != EventType.Repaint) return;
+            if (artPreview != null) return;
+            if (proof || Event.current.type != EventType.Repaint) return;
+            text ??= new GUIStyle(GUI.skin.label) { alignment = TextAnchor.MiddleCenter, fontStyle = FontStyle.Bold };
             if (!started)
             {
                 Tint(new Rect(0, 0, Screen.width, Screen.height), new Color(.02f,.04f,.075f,.62f));
@@ -426,18 +437,10 @@ namespace PolarityFacility
 
         private void DrawCompletionMenu()
         {
-            Tint(new Rect(0, 0, Screen.width, Screen.height), new Color(.02f,.04f,.075f,.72f));
-            float y = Screen.height * .28f;
-            float width = Mathf.Min(368, Screen.width * .85f);
-            float x = (Screen.width - width) / 2;
-            Caption(y, 40, "DEMO COMPLETE", Color.white);
-            if (GUI.Button(new Rect(x, y + 72, width, 42), "Demo List  [Enter / Esc]"))
-            {
-                LevelNavigation.ReturnToDemoList();
-                return;
-            }
-            if (GUI.Button(new Rect(x, y + 123, width, 42), "Retry  [R]"))
-                reset = true;
+            var action = completionMenu.Draw(artPreview != null ? artPreview.HudFont : null);
+            if (proof) return;
+            if (action == FacilityCompletionMenu.Action.Return) LevelNavigation.ReturnToDemoList();
+            if (action == FacilityCompletionMenu.Action.Retry) reset = true;
         }
 
         private void Caption(float y, int size, string value, Color color)
@@ -600,6 +603,7 @@ namespace PolarityFacility
             Debug.Log($"PASS same {massTransfer.LaunchImpulse:F1} N s impulse; light ball lands at receiver; initial speed {lightSpeed:F2} m/s");
             yield return Capture(prefix + "-landing.png");
             yield return new WaitForSeconds(1.05f);
+            if (artPreview != null) yield return Capture(prefix + "-bridge-raised.png");
 
             yield return Steer(exit.position + Vector3.back * .68f, exit.position + Vector3.forward * .68f,
                 () => complete, 12);
@@ -662,14 +666,36 @@ namespace PolarityFacility
             flip[0] = flip[1] = true;
             yield return Steer(new Vector3(6.2f,0,2.1f), new Vector3(7.8f,0,2.55f),
                 () => bodies[0].position.x > 5.7f && bodies[1].position.x > 7.45f, 10);
-            yield return Steer(socketLeft.position, socketRight.position, () => gatePowered, 13);
-            if (!gatePowered || !sawBothFlips) { Fail("dual sockets"); yield break; }
+            Vector3 staging = socketLeft.position + new Vector3(-1.1f, 0, .75f);
+            yield return Steer(staging, socketRight.position,
+                () => onGround[0] && MagnetRules.Distance(bodies[0].position, staging) < .32f
+                    && At(1, socketRight, .22f)
+                    && MagnetRules.Planar(bodies[1].linearVelocity).sqrMagnitude < .6f, 10);
+            if (!At(1, socketRight, TerminalPadRadius) || gatePowered || !sawBothFlips)
+            {
+                Fail("a single occupied terminal plate must not open the shutter");
+                yield break;
+            }
+            // Test the manual sequence: park B, release its controls, then move A onto the other plate.
+            flip[0] = true;
+            float parkedUntil = Time.time + 1.6f;
+            yield return Steer(staging, socketRight.position, () => Time.time >= parkedUntil, 2f, steerB: false);
+            if (!At(1, socketRight, TerminalPadRadius) || gatePowered)
+            {
+                Fail("the parked ball must hold the plate without steering");
+                yield break;
+            }
+            yield return Steer(socketLeft.position, socketRight.position, () => gatePowered, 8, steerB: false);
+            if (!gatePowered) { Fail("dual sockets must open the shutter with one ball parked"); yield break; }
+            Debug.Log("PASS shutter: one plate stays closed; a parked ball holds its plate while the other opens the shutter");
             yield return Capture(prefix + "-sockets.png");
             yield return new WaitForSeconds(1.25f);
             yield return Steer(exit.position + Vector3.back * .71f, exit.position + Vector3.forward * .71f,
                 () => complete, 11);
             if (!complete) { Fail("dual exit"); yield break; }
             yield return Capture(prefix + "-exit.png");
+            if (LevelNavigation.MenuAvailable)
+                yield return LevelNavigation.CaptureFrame(prefix + "-completion-menu.png");
             if (Array.IndexOf(Environment.GetCommandLineArgs(), "-facilityFrameCheck") >= 0)
                 yield return CaptureCameraSweep(prefix);
             Debug.Log("PASS facility traversal: anchor, latch, launch, landing, bridge, dual flip, two sockets, exit");
@@ -717,21 +743,7 @@ namespace PolarityFacility
             Debug.Log("PASS facility camera sweep: 16 frames");
         }
 
-        private void CaptureFrame(string file)
-        {
-            var target = RenderTexture.GetTemporary(1600, 900, 24, RenderTextureFormat.ARGB32, RenderTextureReadWrite.Default, 4);
-            var previous = RenderTexture.active;
-            var image = new Texture2D(1600, 900, TextureFormat.RGB24, false);
-            view.targetTexture = target;
-            view.Render();
-            RenderTexture.active = target;
-            image.ReadPixels(new Rect(0, 0, 1600, 900), 0, 0);
-            System.IO.File.WriteAllBytes(file, image.EncodeToPNG());
-            view.targetTexture = null;
-            RenderTexture.active = previous;
-            RenderTexture.ReleaseTemporary(target);
-            Destroy(image);
-        }
+        private void CaptureFrame(string file) => LevelNavigation.CaptureSceneCamera(view, file);
 
         private void Fail(string step)
         {

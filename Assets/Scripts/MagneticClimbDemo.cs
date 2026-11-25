@@ -21,6 +21,7 @@ namespace PolarityFacility
 
         [SerializeField] private Rigidbody bodyA, bodyB;
         [SerializeField] private Renderer shellA, shellB, receiverLamp, exitLamp;
+        [SerializeField] private Renderer foundryLiftLamp;
         [SerializeField] private Material north, south, idle, live;
         [SerializeField] private Collider receiverDeck, exitDeck;
         [SerializeField] private Transform bridge;
@@ -31,7 +32,7 @@ namespace PolarityFacility
         private Stage stage;
         private Vector3 spawnA, spawnB, bridgeHome;
         private Font font;
-        private GUIStyle text;
+        private FacilityHud hud;
         private float driveA, driveB, routeProgress, detachUntil;
         private float receiverHold, exitHold, lastRepulsion;
         private bool northA, northB, attached, bridgePowered, proof;
@@ -68,6 +69,7 @@ namespace PolarityFacility
 
         private void ResetRun(bool play)
         {
+            completionMenu.Reset();
             stage = play ? Stage.Running : Stage.Ready;
             driveA = driveB = routeProgress = receiverHold = exitHold = lastRepulsion = detachUntil = 0;
             northA = true;
@@ -271,6 +273,8 @@ namespace PolarityFacility
 
         private void LateUpdate()
         {
+            if (foundryLiftLamp != null)
+                foundryLiftLamp.sharedMaterial = bridge.GetComponent<Collider>().enabled ? live : idle;
             tether.SetPosition(0, bodyA.transform.position + Vector3.up * .12f);
             tether.SetPosition(1, bodyB.transform.position + Vector3.up * .12f);
             tether.startColor = new Color(1, .4f, .25f, .22f);
@@ -281,40 +285,38 @@ namespace PolarityFacility
             trailB.startColor = northB ? new Color(1, .3f, .25f) : new Color(.25f, .7f, 1);
         }
 
+        private readonly FacilityCompletionMenu completionMenu = new FacilityCompletionMenu();
+
         private void OnGUI()
         {
-            text ??= new GUIStyle(GUI.skin.label) { font = font != null ? font : GUI.skin.font };
-            float scale = Mathf.Min(Screen.width / 1120f, Screen.height / 630f);
-            Matrix4x4 previous = GUI.matrix;
-            GUI.matrix = Matrix4x4.TRS(new Vector3((Screen.width - 1120 * scale) * .5f,
-                (Screen.height - 630 * scale) * .5f, 0), Quaternion.identity, Vector3.one * scale);
-            LevelNavigation.Fill(new Rect(42, 24, 1036, 83), new Color32(12, 24, 39, 239));
-            Label(new Rect(64, 32, 670, 44), 31, Local("磁吸攀壁", "Magnetic climb"), Color.white);
-            Label(new Rect(64, 78, 940, 24), 16,
-                Local("两球抵达出口 · 墙面与顶棚均为 N 极", "Bring both balls to the exit · The wall and ceiling are N"),
-                new Color(.67f, .77f, .87f));
-            LevelNavigation.Fill(new Rect(42, 518, 1036, 91), new Color32(12, 24, 39, 239));
+            if (stage == Stage.Complete && LevelNavigation.MenuAvailable)
+            {
+                var action = completionMenu.Draw(font, Local("两球已抵达出口", "Both spheres reached the exit"));
+                if (!proof && action == FacilityCompletionMenu.Action.Return) LevelNavigation.ReturnToDemoList();
+                if (!proof && action == FacilityCompletionMenu.Action.Retry) ResetRun(true);
+                return;
+            }
+            if (Event.current.type != EventType.Repaint) return;
+            hud ??= new FacilityHud(font);
+            Matrix4x4 previous = LevelNavigation.BeginScaledGUI();
+            Color state = bridgePowered || attached ? FacilityConsole.Cyan : FacilityConsole.Amber;
+            if (stage == Stage.Fell) state = FacilityConsole.Red;
+            hud.Header(new Rect(34, 28, 259, 73), "05", Local("磁吸攀壁", "Magnetic climb"), state);
+            hud.Indicator(new Rect(865, 28, 221, 37), Local("墙面与顶棚 · N 极", "Wall and ceiling · N pole"), FacilityConsole.Red);
             string status = Local("让 B 球到对岸接收台，为 A 球升起通路。", "Get B to the receiver to raise A's bridge.");
             if (attached) status = Local("B 球已吸附 · ↑ / → 前进，↓ / ← 后退", "B attached · Up / Right forward, Down / Left back");
             if (bridgePowered) status = Local("接收台已启动 · 两球前往右侧出口", "Receiver online · Bring both balls to the exit");
             if (stage == Stage.Fell) status = Local("球已坠落 · Enter / R 重试", "A ball fell · Enter / R Retry");
             if (stage == Stage.Complete) status = Local("演示完成 · Enter / Esc 返回演示列表", "Demo complete · Enter / Esc Demo list");
-            if (stage == Stage.Ready) status = Local("Enter 开始 · 让两球抵达右侧出口", "Enter Start · Bring both balls to the right-hand exit");
-            Label(new Rect(64, 527, 990, 33), 22, status, new Color(.45f, .86f, 1));
-            Label(new Rect(64, 572, 990, 25), 15,
+            if (stage == Stage.Ready) status = Local("开始攀壁试验", "Start the magnetic climb");
+            hud.Status(new Rect(34, 540, 656, 63), status,
                 Local("A / D 移动 A · 方向键移动 B · 右 Shift / Space 切 B 极性 · R 重试 · Esc 返回",
-                    "A / D Move A · Arrows Move B · Right Shift / Space Flip B · R Retry · Esc Back"), Color.white);
+                    "A / D Move A · Arrows Move B · Right Shift / Space Flip B · R Retry · Esc Back"), state,
+                stage == Stage.Ready || stage == Stage.Fell ? "Enter" : null);
             GUI.matrix = previous;
         }
 
         private string Local(string chinese, string english) => font != null ? chinese : english;
-
-        private void Label(Rect rect, int size, string value, Color color)
-        {
-            text.fontSize = size;
-            text.normal.textColor = color;
-            GUI.Label(rect, value, text);
-        }
 
         private IEnumerator Prove(string prefix)
         {
